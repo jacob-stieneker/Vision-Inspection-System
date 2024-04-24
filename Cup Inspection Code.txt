@@ -1,0 +1,98 @@
+Ladder Logic:
+
++----[ ]----+----[/]----( )----+
+|  Laser1   |   Camera   Camera|
+|   (I1)    |  Output    Trigger|
+|           |   (I2)     (O1)  |
++----+------+------------------+
+     |
+     +----[ ]------------------+----(M)----+
+     | Camera Trigger (Edge   | Move FIFO  |
+     | Detection on O1)       | Down Logic |
+     +------------------------+------------+
++----[ ]----+----[M]----(M)----+
+| New Image |  FIFO[9]  FIFO[8]|
+| Taken     |          to      |
+|           |          Move    |
++-----------+------------------+
++----[ ]----+----[ ]----( )----+
+|  Camera   |  Laser2   Memory |
+|  Output   |   (I3)    Bit Set|
+|   (I2)    |           (M1)   |
++-----------+------------------+
+
++----[ ]----+----[ ]----( )----+
+|  Memory   |  Laser2   Blowoff|
+|   Bit     |   (I3)    Valve  |
+|   (M1)    |           (O2)   |
++-----------+------------------+
+
++----[ ]----+----[ ]----(R)----+
+|  Memory   |  Blowoff  Memory |
+|   Bit     |  Valve    Bit    |
+|   (M1)    |  (O2)     Reset  |
++-----------+------------------+
+
+
+Explanation:
+Rung 1: When the first laser sensor (I1) detects the cup, it triggers the camera (O1) and a subsequent logic operation to update the FIFO.
+Rung 2: Each memory slot (M19 to M10) shifts its content to the next position down the queue. The newest image data (status or identifier) is loaded into M10 (top of the FIFO).
+Rung 3: If the camera (I2) detects a defect, it sets a memory bit (M1).
+Rung 4: When the second laser (I3) detects the cup, and if the memory bit (M1) is set, it triggers the blowoff valve (O2).
+Rung 5: After the blowoff action, the memory bit (M1) is reset.
+
+
+Allen-Bradley Structured Text (ST):
+
+PROGRAM CupsInspection
+VAR
+    // Inputs
+    Laser1: BOOL; // I1
+    CameraOutput: BOOL; // I2
+    Laser2: BOOL; // I3
+
+    // Outputs
+    CameraTrigger: BOOL; // O1
+    BlowoffValve: BOOL; // O2
+
+    // FIFO Queue for image statuses
+    FIFO: ARRAY[1..10] OF STRING; // M10 to M19
+    NewImageTaken: BOOL;
+    DefectiveFlag: BOOL; // Internal flag if defect is detected
+
+    // Temporary variables
+    i: INT;
+END_VAR
+
+// Main Control Logic
+IF Laser1 THEN
+    CameraTrigger := TRUE; // Trigger camera
+    NewImageTaken := TRUE; // Simulate new image taken
+END_IF;
+
+// Shift FIFO when new image is captured
+IF NewImageTaken THEN
+    FOR i := 10 DOWNTO 2 BY 1 DO
+        FIFO[i] := FIFO[i-1]; // Shift FIFO down
+    END_FOR;
+    FIFO[1] := 'New Image'; // Add new image at the start
+    NewImageTaken := FALSE; // Reset flag
+END_IF;
+
+// Check camera output and set defective flag
+IF CameraOutput THEN
+    DefectiveFlag := TRUE;
+ELSE
+    DefectiveFlag := FALSE;
+END_IF;
+
+// If cup is detected by second laser and is defective
+IF Laser2 AND DefectiveFlag THEN
+    BlowoffValve := TRUE; // Activate blowoff to reject cup
+    DefectiveFlag := FALSE; // Reset defect flag after action
+ELSE
+    BlowoffValve := FALSE; // Ensure valve is off if no defect
+END_IF;
+
+END_PROGRAM
+
